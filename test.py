@@ -15,19 +15,70 @@ def get_status(base_url, clinician_id): # sends requests
     
 def parse_status(raw):
     loc = raw['features'][0]['geometry']['coordinates']
-    zone = raw['features'][1]['geometry']['coordinates'][0]
+    zone = raw['features'][1]['geometry']['coordinates'][0] # type Polygon
     print("loc: " + str(loc))
     print("zone: " + str(zone))
     return [loc, zone]
 
+def check(loc, zone):
+    crosses = 0
+    x, y = loc
+    print("x" + str(x))
+    print("y" + str(y))
+
+    boundaries = []
+    points = len(zone)
+    for i in range(points - 1): # a type Polygon, points are strictly ordered to trace continuous perimeter
+        boundaries.append((zone[i], zone[i+1])) # the last point is the same as the first point, so this is ok
+
+    for p1, p2 in boundaries: # unpack
+        x1, y1 = p1
+        x2, y2 = p2
+
+        is_horizontal_edge = (y1 == y2 == y) # boundary is horizontal and clinician is on same y
+        is_within_x_range = min(x1, x2) <= x <= max(x1, x2)
+        
+        if is_horizontal_edge and is_within_x_range:
+            return False # on the border, so no
+            
+        if (y1 > y) != (y2 > y): # if between y axis span
+            y_distance_to_point = y - y1 # point-slope equation, basic algebra
+            y_total_distance = y2 - y1
+            y_ratio = y_distance_to_point / y_total_distance
+            
+            x_total_distance = x2 - x1
+            intersect_x = x1 + (x_total_distance * y_ratio)
+                
+            if x < intersect_x: # to the left of the x intersect (excluding border)
+                crosses += 1
+
+            if x == intersect_x: # border check
+                return False
+
+    return crosses % 2 != 0 # if only crossed odd times, its inside
+
 if __name__ == "__main__":    
     print("Testing id 1):")
     raw_1 = get_status(BASE_URL, 1)
-    print(raw_1)
     parsed_1 = parse_status(raw_1)
-    
+    loc_1, zone_1 = parse_status(raw_1)
+    safe_1 = check(loc_1, zone_1)
+
     print()
     print("Testing id 7:")
     raw_7 = get_status(BASE_URL, 7)
-    print(raw_7)
-    parsed_7 = parse_status(raw_7)
+    loc_7, zone_7 = parse_status(raw_7)
+    safe_7 = check(loc_7, zone_7)
+
+
+
+    square = [[0, 0], [4, 0], [4, 4], [0, 4], [0, 0]]
+    
+    print(check([2, 2], square)) # inside (true)
+    print(check([5, 5], square)) # outside (f)
+    print(check([2, 0], square)) # bottom boundary (f)
+    print(check([4, 2], square)) # right boundary (f)
+
+    triangle = [[0, 0], [4, 4], [0, 4], [0, 0]]
+    print(check([2, 2], triangle)) # diag (f)
+    print(check([1, 2], triangle)) # inside (t)
