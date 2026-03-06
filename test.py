@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ALERT_URL = "sprinter-eng-test@guerrillamail.info"
+ALERT_URL = "coding-challenges+clin-alerts@sprinterhealth.com"
 BASE_URL = "https://3qbqr98twd.execute-api.us-west-2.amazonaws.com/test"
 SENDER_EMAIL = os.getenv("SENDER_EMAIL") # not seeing my real email 
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD") # app password for my real email
@@ -109,7 +109,11 @@ if __name__ == "__main__":
     os.makedirs("unsafe", exist_ok=True) # make the dir if it doesn't exist, ignore if it does
     os.makedirs("safe", exist_ok=True)
 
-    while True:
+    start = time.time()
+    run_time = 3600 # 1 hour
+    # my laptop shut off halfway because it ran out of battery :(((
+
+    while time.time() - start < run_time:
         for clinician_id in range(1, 8):
             raw = get_status(BASE_URL, clinician_id)
 
