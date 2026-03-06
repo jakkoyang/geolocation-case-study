@@ -1,6 +1,7 @@
 import requests
 import os
 import smtplib
+import json
 from email.message import EmailMessage
 from dotenv import load_dotenv
 
@@ -8,7 +9,7 @@ load_dotenv()
 
 ALERT_URL = "sprinter-eng-test@guerrillamail.info"
 BASE_URL = "https://3qbqr98twd.execute-api.us-west-2.amazonaws.com/test"
-SENDER_EMAIL = os.getenv("SENDER_EMAIL") # not seeing my real email lol
+SENDER_EMAIL = os.getenv("SENDER_EMAIL") # not seeing my real email 
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD") # app password for my real email
 
 def get_status(base_url, clinician_id): # sends requests 
@@ -21,18 +22,16 @@ def get_status(base_url, clinician_id): # sends requests
     except requests.exceptions.RequestException:
         return None
     
-def parse_status(raw):
+def parse_status(raw): # returns location, and list of zones
     loc = raw["features"][0]["geometry"]["coordinates"]
-    zone = raw["features"][1]["geometry"]["coordinates"][0] # type Polygon
-    print("loc: " + str(loc))
-    print("zone: " + str(zone))
-    return [loc, zone]
+    zones = [] # now works for multiple polygons, in test 3
+    for i in range(1, len(raw["features"])):
+        zones.append(raw["features"][i]["geometry"]["coordinates"][0])
+    return [loc, zones]
 
-def check(loc, zone):
+def check(loc, zone): # for a single zone
     crosses = 0
     x, y = loc
-    print("x" + str(x))
-    print("y" + str(y))
 
     boundaries = []
     points = len(zone)
@@ -67,8 +66,8 @@ def check(loc, zone):
 
 def send(c_id, dest_email): # smtplib docs
     msg = EmailMessage()
-    msg.set_content("test")
-    msg["Subject"] = "test subject"
+    msg.set_content(f"Alert, clinician {c_id} is out of their designated safety zone.")
+    msg["Subject"] = f"Missing clinician ID: {c_id}"
     msg["From"] = SENDER_EMAIL
     msg["To"] = dest_email
 
@@ -76,25 +75,29 @@ def send(c_id, dest_email): # smtplib docs
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
             smtp.send_message(msg)
-        print(f"sent email")
+        print(f"Sent email for ID {c_id}")
     except Exception as e:
-        print(f"failed to send email: {e}")
+        print(f"Failed to send email for ID {c_id}: {e}")
 
 if __name__ == "__main__":    
-    print("Testing id 1):")
-    raw_1 = get_status(BASE_URL, 1)
-    loc_1, zone_1 = parse_status(raw_1)
-    safe_1 = check(loc_1, zone_1)
-    print("Safe:", safe_1)
 
-    print()
-    print("Testing id 7:")
-    raw_7 = get_status(BASE_URL, 7)
-    loc_7, zone_7 = parse_status(raw_7)
-    safe_7 = check(loc_7, zone_7)
-    print("Safe:", safe_7)
-    if not safe_7:
-        send(7, ALERT_URL)
+    print("Starting service")
 
+    print("Testing id 3):") # this doesn't work for multiple polygons
+    raw = get_status(BASE_URL, 3)
+    print(json.dumps(raw, indent=2)) # debugging
+    loc, zones = parse_status(raw)
+    is_safe = False
+    for single_zone in zones:
+        if check(loc, single_zone):
+            is_safe = True
+            break
+    print("Safe:", is_safe)
 
-
+    # print()
+    # print("Testing id 7:")
+    # raw_7 = get_status(BASE_URL, 7)
+    # print(raw_7)
+    # print(json.dumps(raw_7, indent=2))
+    # loc_7, zone_7 = parse_status(raw_7)
+    # safe_7 = check(loc_7, zone_7)
