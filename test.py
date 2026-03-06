@@ -2,6 +2,7 @@ import requests
 import os
 import smtplib
 import json
+import time
 from email.message import EmailMessage
 from dotenv import load_dotenv
 
@@ -22,14 +23,21 @@ def get_status(base_url, clinician_id): # sends requests
     except requests.exceptions.RequestException:
         return None
     
-def parse_status(raw): # returns location, and list of zones
+def parse_status(raw): 
     loc = raw["features"][0]["geometry"]["coordinates"]
-    zones = [] # now works for multiple polygons, in test 3
+    polygons = [] # zone 2 has a hole by nature of polygon
+    
     for i in range(1, len(raw["features"])):
-        zones.append(raw["features"][i]["geometry"]["coordinates"][0])
-    return [loc, zones]
+        geom = raw["features"][i]["geometry"]
+        
+        if geom["type"] == "Polygon":
+            exterior = geom["coordinates"][0]
+            holes = geom["coordinates"][1:]
+            polygons.append({"exterior": exterior, "holes": holes})
+            
+    return loc, polygons
 
-def check(loc, zone): # for a single zone
+def check_ring(loc, zone): # for a single ring but too lazy to change the name
     crosses = 0
     x, y = loc
 
@@ -64,6 +72,21 @@ def check(loc, zone): # for a single zone
 
     return crosses % 2 != 0 # if only crossed odd times, its inside
 
+def check(loc, polygons): # uses the old check just in case its a ring (if clinician 2 steps into the ring)
+    for poly in polygons: 
+        if check_ring(loc, poly["exterior"]):
+            in_hole = False 
+            
+            for hole in poly["holes"]: # if its a ring and its inside
+                if check_ring(loc, hole):
+                    in_hole = True
+                    break
+                    
+            if not in_hole:
+                return True
+                
+    return False
+
 def send(c_id, dest_email): # smtplib docs
     msg = EmailMessage()
     msg.set_content(f"Alert, clinician {c_id} is out of their designated safety zone.")
@@ -83,21 +106,29 @@ if __name__ == "__main__":
 
     print("Starting service")
 
-    print("Testing id 3):") # this doesn't work for multiple polygons
-    raw = get_status(BASE_URL, 3)
-    print(json.dumps(raw, indent=2)) # debugging
-    loc, zones = parse_status(raw)
-    is_safe = False
-    for single_zone in zones:
-        if check(loc, single_zone):
-            is_safe = True
-            break
-    print("Safe:", is_safe)
+    os.makedirs("unsafe", exist_ok=True) # make the dir if it doesn't exist, ignore if it does
+    os.makedirs("safe", exist_ok=True)
 
-    # print()
-    # print("Testing id 7:")
-    # raw_7 = get_status(BASE_URL, 7)
-    # print(raw_7)
-    # print(json.dumps(raw_7, indent=2))
-    # loc_7, zone_7 = parse_status(raw_7)
-    # safe_7 = check(loc_7, zone_7)
+    while True:
+        for clinician_id in range(1, 8):
+            raw = get_status(BASE_URL, clinician_id)
+
+            if raw and "features" in raw: 
+                loc, polygons = parse_status(raw)
+                is_safe = check(loc, polygons)
+
+                if not is_safe:
+                    print(f"Clinician {clinician_id} is out of bounds, sending alert")
+                    with open(f"unsafe/raw{clinician_id}.txt", "w") as f: # manual checking for geojson.io
+                        json.dump(raw, f, indent=2)
+                    send(clinician_id, ALERT_URL)
+                else:
+                    print(f"Clinician {clinician_id} is safe")
+                    with open(f"safe/raw{clinician_id}.txt", "w") as f: # manual checking for geojson.io
+                        json.dump(raw, f, indent=2)
+            else:
+                print(f"Failed to retrieve valid data for clinician {clinician_id}, skip")
+
+        # 40 seconds is too fast! 120 seconds is too slow?
+        print("Checked, wait 80 seconds\n")
+        time.sleep(80)

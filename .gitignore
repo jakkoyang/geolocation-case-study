@@ -1,1 +1,4 @@
 .env
+output.txt
+/unsafe
+/safe
