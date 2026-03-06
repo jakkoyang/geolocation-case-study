@@ -1,7 +1,15 @@
 import requests
+import os
+import smtplib
+from email.message import EmailMessage
+from dotenv import load_dotenv
 
-ALERT_URL = "coding-challenges+clin-alerts@sprinterhealth.com"
+load_dotenv()
+
+ALERT_URL = "sprinter-eng-test@guerrillamail.info"
 BASE_URL = "https://3qbqr98twd.execute-api.us-west-2.amazonaws.com/test"
+SENDER_EMAIL = os.getenv("SENDER_EMAIL") # not seeing my real email lol
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD") # app password for my real email
 
 def get_status(base_url, clinician_id): # sends requests 
     url = f"{base_url}/clinicianstatus/{clinician_id}"
@@ -14,8 +22,8 @@ def get_status(base_url, clinician_id): # sends requests
         return None
     
 def parse_status(raw):
-    loc = raw['features'][0]['geometry']['coordinates']
-    zone = raw['features'][1]['geometry']['coordinates'][0] # type Polygon
+    loc = raw["features"][0]["geometry"]["coordinates"]
+    zone = raw["features"][1]["geometry"]["coordinates"][0] # type Polygon
     print("loc: " + str(loc))
     print("zone: " + str(zone))
     return [loc, zone]
@@ -57,28 +65,36 @@ def check(loc, zone):
 
     return crosses % 2 != 0 # if only crossed odd times, its inside
 
+def send(c_id, dest_email): # smtplib docs
+    msg = EmailMessage()
+    msg.set_content("test")
+    msg["Subject"] = "test subject"
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = dest_email
+
+    try: # thanks google
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+        print(f"sent email")
+    except Exception as e:
+        print(f"failed to send email: {e}")
+
 if __name__ == "__main__":    
     print("Testing id 1):")
     raw_1 = get_status(BASE_URL, 1)
-    parsed_1 = parse_status(raw_1)
     loc_1, zone_1 = parse_status(raw_1)
     safe_1 = check(loc_1, zone_1)
+    print("Safe:", safe_1)
 
     print()
     print("Testing id 7:")
     raw_7 = get_status(BASE_URL, 7)
     loc_7, zone_7 = parse_status(raw_7)
     safe_7 = check(loc_7, zone_7)
+    print("Safe:", safe_7)
+    if not safe_7:
+        send(7, ALERT_URL)
 
 
 
-    square = [[0, 0], [4, 0], [4, 4], [0, 4], [0, 0]]
-    
-    print(check([2, 2], square)) # inside (true)
-    print(check([5, 5], square)) # outside (f)
-    print(check([2, 0], square)) # bottom boundary (f)
-    print(check([4, 2], square)) # right boundary (f)
-
-    triangle = [[0, 0], [4, 4], [0, 4], [0, 0]]
-    print(check([2, 2], triangle)) # diag (f)
-    print(check([1, 2], triangle)) # inside (t)
